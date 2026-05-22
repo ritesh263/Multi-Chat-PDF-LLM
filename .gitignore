@@ -1,0 +1,24 @@
+# Virtual Environment
+backend/venv/
+.venv/
+ENV/
+env/
+__pycache__/
+*.pyc
+
+# Node Modules (Frontend dependencies)
+frontend/node_modules/
+dist/
+build/
+
+# Sensitive Environment Variables
+.env
+backend/.env
+frontend/.env
+*.env.local
+
+# Local Database & OS Files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
