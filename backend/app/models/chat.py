@@ -5,7 +5,7 @@ from app.models.user import PyObjectId
 from bson import ObjectId
 
 class MessageModel(BaseModel):
-    role: str  # 'user' or 'assistant'
+    role: str 
     content: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     citations: Optional[List[Dict[str, Any]]] = None
