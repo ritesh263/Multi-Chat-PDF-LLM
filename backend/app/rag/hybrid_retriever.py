@@ -37,13 +37,10 @@ class HybridRanker:
             vector_score = item["metadata"].get("score", 0.0)
             lexical_score = cls.score_lexical_relevance(query, item["text"])
             
-            # Hybrid Reciprocal/Linear Blend Formula
             hybrid_score = (alpha * vector_score) + ((1 - alpha) * lexical_score)
             
-            # Update the metadata payload with the unified hybrid score
             item["metadata"]["hybrid_composite_score"] = float(hybrid_score)
             re_ranked.append(item)
             
-        # Sort chunks dynamically based on their newly blended relevance ranking
         re_ranked.sort(key=lambda x: x["metadata"]["hybrid_composite_score"], reverse=True)
         return re_ranked
