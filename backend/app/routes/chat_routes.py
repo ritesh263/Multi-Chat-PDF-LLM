@@ -31,7 +31,6 @@ async def chat_with_agent(request: ChatRequest, current_user = Depends(get_curre
         matched_chunks = retriever.retrieve(request.query, top_k=5)
         
         if not matched_chunks:
-            # Note: For streaming, we yield the error message as a plain string
             async def empty_stream():
                 yield "I couldn't find any relevant information in your ingested documents to answer that."
             return StreamingResponse(empty_stream(), media_type="text/plain")
@@ -73,9 +72,8 @@ async def chat_with_agent(request: ChatRequest, current_user = Depends(get_curre
         if not valid_model_name:
             raise Exception("No text generation models found for this API key.")
 
-        print(f"🤖 Auto-selected authorized model: {valid_model_name}")
+        print(f"Auto-selected authorized model: {valid_model_name}")
         
-        # ✅ THE FIX: Stream the generation and yield it to the frontend
         model = genai.GenerativeModel(valid_model_name)
         response_stream = model.generate_content(prompt, stream=True)
         
@@ -84,13 +82,13 @@ async def chat_with_agent(request: ChatRequest, current_user = Depends(get_curre
                 for chunk in response_stream:
                     if chunk.text:
                         yield chunk.text
-                        await asyncio.sleep(0.01) # Yield control back to the event loop
+                        await asyncio.sleep(0.01) 
             except Exception as stream_err:
-                print(f"💥 Streaming Error: {str(stream_err)}")
+                print(f"Streaming Error: {str(stream_err)}")
                 yield "\n\n[Error: Connection interrupted during streaming.]"
 
         return StreamingResponse(generate_stream(), media_type="text/plain")
 
     except Exception as e:
-        print(f"💥 Chat Generation Error: {str(e)}")
+        print(f"Chat Generation Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to synthesize AI response.")
