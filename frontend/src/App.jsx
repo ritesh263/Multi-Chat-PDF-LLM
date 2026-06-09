@@ -102,7 +102,6 @@ function App() {
   return (
     <div className="flex h-screen bg-slate-950 text-gray-100 font-sans">
       
-      {/* Sidebar */}
       <div className="w-72 bg-gray-900 border-r border-gray-800 p-6 flex flex-col justify-between">
         <div>
           <h2 className="text-lg font-bold text-sky-400 mb-1">Enterprise Intelligence</h2>
