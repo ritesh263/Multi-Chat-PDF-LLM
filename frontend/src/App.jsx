@@ -12,7 +12,6 @@ function App() {
   
   const fileInputRef = useRef(null);
  
-  // Automatically pull existing documents from MongoDB on initialization
   useEffect(() => {
     const loadDocs = async () => {
       try {
@@ -62,7 +61,7 @@ function App() {
     }
   };
 
-  // --- Handle Search Queries (Streaming) ---
+
   const handleSearchSubmit = async (e) => {
     e.preventDefault();
     if (!query.trim()) return;
@@ -93,7 +92,7 @@ function App() {
     } catch (error) {
       setChatHistory(prev => {
         const newHistory = [...prev];
-        newHistory[newHistory.length - 1].content = `⚠️ Connection Error: Unable to reach the AI routing engine.`;
+        newHistory[newHistory.length - 1].content = `Connection Error: Unable to reach the AI routing engine.`;
         return newHistory;
       });
       setIsTyping(false);
@@ -155,10 +154,10 @@ function App() {
         </div>
       </div>
 
-      {/* Main Chat Area */}
+      
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         
-        {/* Chat History Container */}
+       
         <div className="flex-1 p-10 overflow-y-auto flex flex-col gap-6">
           {chatHistory.map((msg, index) => (
             <div 
@@ -185,7 +184,6 @@ function App() {
           )}
         </div>
 
-        {/* Input Form */}
         <div className="p-6 border-t border-gray-800 bg-slate-900/50">
           <form onSubmit={handleSearchSubmit} className="flex gap-3 max-w-5xl mx-auto">
             <input 
