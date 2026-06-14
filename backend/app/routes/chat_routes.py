@@ -85,10 +85,22 @@ async def chat_with_agent(request: ChatRequest, current_user = Depends(get_curre
                         await asyncio.sleep(0.01) 
             except Exception as stream_err:
                 print(f"Streaming Error: {str(stream_err)}")
-                yield "\n\n[Error: Connection interrupted during streaming.]"
+                if "429" in str(stream_err) or "quota" in str(stream_err).lower():
+                    yield "\n\n⚠️ [System Notice: Generation paused due to API rate limits. Please wait 30 seconds.]"
+                else:
+                    yield "\n\n[Error: Connection interrupted during streaming.]"
 
         return StreamingResponse(generate_stream(), media_type="text/plain")
 
     except Exception as e:
-        print(f"Chat Generation Error: {str(e)}")
+        error_str = str(e)
+        print(f"Chat Generation Error: {error_str}")
+        
+        # 1. Check if the error is a Google API Rate Limit (429)
+        if "429" in error_str or "quota" in error_str.lower():
+            async def rate_limit_stream():
+                yield "⚠️ **System Notice:** The AI routing engine has temporarily paused to prevent server overload (API rate limit reached). Please wait about 30 seconds and try your query again!"
+            return StreamingResponse(rate_limit_stream(), media_type="text/plain")
+            
+        # 2. If it's a different error, return a generic failure
         raise HTTPException(status_code=500, detail="Failed to synthesize AI response.")
