@@ -22,3 +22,5 @@ frontend/.env
 Thumbs.db
 .idea/
 .vscode/
+
+backend/uploaded_documents/

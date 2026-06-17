@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Request, BackgroundTasks  # 🟢 Added BackgroundTasks
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Request, BackgroundTasks
 from app.auth.dependencies import get_current_user
 from app.database.connection import get_database
 from app.models.document import DocumentInDB
@@ -8,7 +8,6 @@ from app.rag.pipeline import RAGPipelineManager
 from app.services.ai_service import AIService
 from bson import ObjectId
 import os
-import shutil
 import asyncio
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
@@ -21,21 +20,24 @@ async def upload_documents(
     file: UploadFile = File(...), 
     current_user: dict = Depends(get_current_user)
 ):
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only standard PDF files are supported.")
+    allowed_extensions = ('.pdf', '.txt', '.md', '.docx')
+    if not file.filename.lower().endswith(allowed_extensions):
+        raise HTTPException(status_code=400, detail="Only PDF, TXT, MD, and DOCX files are supported.")
         
     db = get_database()
     user_id = current_user["_id"]
     
+    file_bytes = await file.read()
+    
     file_path = os.path.join(settings.UPLOAD_DIR, f"{user_id}_{file.filename}")
     with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        buffer.write(file_bytes)
         
     doc_id = ObjectId()
     
     try:
-        pages_data = DocumentProcessor.extract_text_from_pdf(file_path)
-        chunks = DocumentProcessor.split_documents(pages_data)
+        pages_data = DocumentProcessor.extract_text_with_metadata(file_bytes, file.filename)
+        chunks = DocumentProcessor.chunk_text(pages_data)
         
         await asyncio.sleep(0.1)
         if await request.is_disconnected():
@@ -43,7 +45,6 @@ async def upload_documents(
             print(f"[CANCELLATION VERIFIED] Ingestion safely aborted during parsing for: {file.filename}")
             return {"message": "Pipeline execution aborted safely."}
             
-        
         sample_texts = [c["text"] for c in chunks[:4]]
         summary = await ai_service.generate_document_summary(sample_texts)
         
@@ -53,7 +54,6 @@ async def upload_documents(
             print(f"[CANCELLATION VERIFIED] Ingestion safely aborted before database commit for: {file.filename}")
             return {"message": "Pipeline execution aborted safely."}
 
-        
         existing_doc = await db["documents"].find_one({"filename": file.filename, "user_id": user_id})
         
         if existing_doc:
@@ -101,35 +101,35 @@ async def upload_documents(
         await db["documents"].delete_one({"_id": doc_id})
         await db["chunks"].delete_many({"document_id": doc_id})
         raise HTTPException(status_code=500, detail=f"Pipeline Processing Internal Failure: {str(e)}")
-        
-@router.get("/")
+
+@router.get("/list")
 async def list_documents(current_user: dict = Depends(get_current_user)):
     db = get_database()
-    docs = await db["documents"].find({"user_id": current_user["_id"]}).to_list(length=100)
-    for d in docs:
-        d["_id"] = str(d["_id"])
-        d["user_id"] = str(d["user_id"])
-    return docs
+    filenames = await db["documents"].distinct("filename", {"user_id": current_user["_id"]})
+    return {"documents": filenames}
 
-@router.delete("/{doc_id}")
+@router.delete("/{filename}")
 async def delete_document(
-    doc_id: str, 
+    filename: str, 
     background_tasks: BackgroundTasks, 
     current_user: dict = Depends(get_current_user)
 ):
     db = get_database()
     user_id = current_user["_id"]
     
-    doc = await db["documents"].find_one({"_id": ObjectId(doc_id), "user_id": user_id})
+    doc = await db["documents"].find_one({"filename": filename, "user_id": user_id})
     if not doc:
-        raise HTTPException(status_code=404, detail="Document asset target context profile not found.")
+        raise HTTPException(status_code=404, detail="Document asset not found.")
         
-    await db["documents"].delete_one({"_id": ObjectId(doc_id)})
-    await db["chunks"].delete_many({"document_id": ObjectId(doc_id)})
+    await db["documents"].delete_one({"_id": doc["_id"]})
+    await db["chunks"].delete_many({"document_id": doc["_id"]})
     
-    file_path = os.path.join(settings.UPLOAD_DIR, f"{user_id}_{doc['filename']}")
+    file_path = os.path.join(settings.UPLOAD_DIR, f"{user_id}_{filename}")
     if os.path.exists(file_path):
         os.remove(file_path)
         
+    RAGPipelineManager.clear_retriever(str(user_id))
     background_tasks.add_task(RAGPipelineManager.reload_user_indices, str(user_id), db)
+    
     return {"message": "Document metadata structures successfully removed from active vector indexes."}
+
