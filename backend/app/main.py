@@ -36,7 +36,7 @@ async def shutdown_event():
 
 app.include_router(auth_routes.router)
 app.include_router(document_routes.router)
-app.include_router(chat_routes.router, prefix="${API_BASE_URL}/api/chat", tags=["Chat"])
+app.include_router(chat_routes.router, prefix="/api/chat", tags=["Chat"])
 
 @app.get("/health")
 def health_check():
