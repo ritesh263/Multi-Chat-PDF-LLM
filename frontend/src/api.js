@@ -1,4 +1,5 @@
-const API_BASE_URL = "https://multi-chat-pdf-llm.onrender.com";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
 export const fetchUserProfile = async () => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/auth/me`);
