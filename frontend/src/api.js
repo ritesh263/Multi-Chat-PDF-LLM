@@ -1,6 +1,7 @@
+const API_BASE_URL = "https://multi-chat-pdf-llm.onrender.com";
 export const fetchUserProfile = async () => {
   try {
-    const response = await fetch('/api/auth/me');
+    const response = await fetch(`${API_BASE_URL}/api/auth/me`);
     if (!response.ok) throw new Error('Failed to load user profile');
     return await response.json();
   } catch (error) {
@@ -13,7 +14,7 @@ export const uploadDocument = async (file, signal) => {
   const formData = new FormData();
   formData.append('file', file);
 
-  const response = await fetch('/api/documents/upload', {
+  const response = await fetch(`${API_BASE_URL}/api/documents/upload`, {
     method: 'POST',
     body: formData,
     signal: signal 
@@ -28,7 +29,7 @@ export const uploadDocument = async (file, signal) => {
 
 export const sendChatMessageStream = async (query, chatHistory, onChunkReceived) => {
   try {
-    const response = await fetch('/api/chat', {
+    const response = await fetch(`${API_BASE_URL}/api/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -58,7 +59,7 @@ export const sendChatMessageStream = async (query, chatHistory, onChunkReceived)
 
 export const fetchDocumentsList = async () => {
   try {
-    const response = await fetch('/api/documents/list');
+    const response = await fetch(`${API_BASE_URL}/api/documents/list`)
     if (!response.ok) throw new Error('Failed to fetch document list');
     return await response.json();
   } catch (error) {
@@ -69,7 +70,7 @@ export const fetchDocumentsList = async () => {
 
 export const deleteDocument = async (filename) => {
   try {
-    const response = await fetch(`/api/documents/${encodeURIComponent(filename)}`, {
+    const response = await fetch(`${API_BASE_URL}/api/documents/${encodeURIComponent(filename)}`, {
       method: 'DELETE',
     });
     if (!response.ok) throw new Error('Failed to delete document');

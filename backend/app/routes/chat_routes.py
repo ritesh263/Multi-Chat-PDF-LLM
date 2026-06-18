@@ -86,7 +86,7 @@ async def chat_with_agent(request: ChatRequest, current_user = Depends(get_curre
             except Exception as stream_err:
                 print(f"Streaming Error: {str(stream_err)}")
                 if "429" in str(stream_err) or "quota" in str(stream_err).lower():
-                    yield "\n\n⚠️ [System Notice: Generation paused due to API rate limits. Please wait 30 seconds.]"
+                    yield "\n\n[System Notice: Generation paused due to API rate limits. Please wait 30 seconds.]"
                 else:
                     yield "\n\n[Error: Connection interrupted during streaming.]"
 
@@ -98,7 +98,7 @@ async def chat_with_agent(request: ChatRequest, current_user = Depends(get_curre
         
         if "429" in error_str or "quota" in error_str.lower():
             async def rate_limit_stream():
-                yield "⚠️ **System Notice:** The AI routing engine has temporarily paused to prevent server overload (API rate limit reached). Please wait about 30 seconds and try your query again!"
+                yield "**System Notice:** The AI routing engine has temporarily paused to prevent server overload (API rate limit reached). Please wait about 30 seconds and try your query again!"
             return StreamingResponse(rate_limit_stream(), media_type="text/plain")
             
         raise HTTPException(status_code=500, detail="Failed to synthesize AI response.")
