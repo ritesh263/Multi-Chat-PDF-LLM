@@ -28,14 +28,19 @@ export const uploadDocument = async (file, signal) => {
   return await response.json();
 };
 
-export const sendChatMessageStream = async (query, chatHistory, onChunkReceived) => {
+// UPGRADED: Added selectedDocument to parameters and payload
+export const sendChatMessageStream = async (query, chatHistory, selectedDocument, onChunkReceived) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ query: query, history: chatHistory }), 
+      body: JSON.stringify({ 
+        query: query, 
+        history: chatHistory,
+        target_document: selectedDocument || "all" // Pass the target to the backend
+      }), 
     });
     
     if (!response.ok) throw new Error('Chat generation failed');

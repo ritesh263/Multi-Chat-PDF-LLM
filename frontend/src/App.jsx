@@ -16,6 +16,11 @@ function App() {
   
   const [savedSessions, setSavedSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
+
+  // --- NEW STATE: Document Targeting & Renaming ---
+  const [selectedDocument, setSelectedDocument] = useState(''); 
+  const [editingSessionId, setEditingSessionId] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
   
   const fileInputRef = useRef(null);
   const uploadAbortController = useRef(null);
@@ -42,12 +47,14 @@ function App() {
     if (currentSessionId && chatHistory.length > 1) {
       setSavedSessions(prev => {
         const existingIndex = prev.findIndex(s => s.id === currentSessionId);
-        const title = chatHistory[1].content.substring(0, 25) + (chatHistory[1].content.length > 25 ? '...' : '');
-        
         let updated = [...prev];
+        
         if (existingIndex >= 0) {
-          updated[existingIndex] = { ...updated[existingIndex], title: title, history: chatHistory };
+          // UPGRADE: Only update history, preserve the title if they renamed it!
+          updated[existingIndex] = { ...updated[existingIndex], history: chatHistory };
         } else {
+          // First time saving: auto-generate title
+          const title = chatHistory[1].content.substring(0, 25) + (chatHistory[1].content.length > 25 ? '...' : '');
           updated = [{ id: currentSessionId, title, history: chatHistory }, ...updated];
         }
         
@@ -73,8 +80,8 @@ function App() {
         content: `Successfully ingested and indexed: **${file.name}**. Vector matrix updated. You may now query this document.` 
       }]);
     } catch (error) {
-      if (error.name === 'AbortError') {
-        setChatHistory(prev => [...prev, { role: 'assistant', content: `Ingestion aborted by user. ${file.name} was safely discarded.` }]);
+      if (error?.name === 'AbortError') {
+        setChatHistory(prev => [...prev, { role: 'assistant', content: `⚠️ Ingestion aborted by user. ${file.name} was safely discarded.` }]);
       } else {
         setChatHistory(prev => [...prev, { role: 'assistant', content: `Ingestion failed. Ensure the backend server is running.` }]);
       }
@@ -95,6 +102,7 @@ function App() {
     try {
       await deleteDocument(fileName);
       setUploadedFiles(prev => prev.filter(name => name !== fileName));
+      if (selectedDocument === fileName) setSelectedDocument('');
     } catch (error) {
       alert(`Failed to delete ${fileName}`);
     }
@@ -116,6 +124,7 @@ function App() {
   };
 
   const loadSession = (id) => {
+    if (editingSessionId === id) return; // Prevent loading while editing
     const session = savedSessions.find(s => s.id === id);
     if (session) {
       setChatHistory(session.history);
@@ -132,6 +141,26 @@ function App() {
       setChatHistory([defaultGreeting]);
       setCurrentSessionId(null);
     }
+  };
+
+  // --- NEW: Renaming Functions ---
+  const startEditingTitle = (e, session) => {
+    e.stopPropagation();
+    setEditingSessionId(session.id);
+    setEditTitle(session.title);
+  };
+
+  const saveEditedTitle = (id) => {
+    if (!editTitle.trim()) {
+      setEditingSessionId(null);
+      return;
+    }
+    setSavedSessions(prev => {
+      const updated = prev.map(s => s.id === id ? { ...s, title: editTitle.trim() } : s);
+      localStorage.setItem('rag_chat_sessions', JSON.stringify(updated));
+      return updated;
+    });
+    setEditingSessionId(null);
   };
 
   const executeSearch = async (searchText) => {
@@ -154,7 +183,8 @@ function App() {
     setIsTyping(true); 
 
     try {
-      await sendChatMessageStream(searchText, currentHistory, (newChunk) => {
+      // UPGRADE: Passing selectedDocument to the API
+      await sendChatMessageStream(searchText, currentHistory, selectedDocument, (newChunk) => {
         setIsTyping(false); 
         setChatHistory(prev => {
           const newHistory = [...prev];
@@ -169,7 +199,7 @@ function App() {
     } catch (error) {
       setChatHistory(prev => {
         const newHistory = [...prev];
-        newHistory[newHistory.length - 1].content = `Connection Error: Unable to reach the AI routing engine.`;
+        newHistory[newHistory.length - 1].content = `⚠️ Connection Error: Unable to reach the AI routing engine.`;
         return newHistory;
       });
       setIsTyping(false);
@@ -191,6 +221,7 @@ function App() {
   return (
     <div className="flex h-screen bg-slate-950 text-gray-100 font-sans overflow-hidden">
       
+      {/* Sidebar */}
       <div className="w-72 bg-gray-900 border-r border-gray-800 p-6 flex flex-col h-full">
         <div className="shrink-0">
           <h2 className="text-lg font-bold text-sky-400 mb-1">Enterprise Intelligence</h2>
@@ -199,27 +230,17 @@ function App() {
           <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,.txt,.md,.docx" />
           
           {isUploading ? (
-            <button 
-              onClick={cancelUpload}
-              className="w-full p-3 font-bold rounded-md mb-3 transition-all bg-rose-600 hover:bg-rose-500 text-white flex justify-center items-center gap-2 shadow-lg shadow-rose-900/20"
-            >
+            <button onClick={cancelUpload} className="w-full p-3 font-bold rounded-md mb-3 transition-all bg-rose-600 hover:bg-rose-500 text-white flex justify-center items-center gap-2 shadow-lg shadow-rose-900/20">
               <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
               Cancel Indexing ✕
             </button>
           ) : (
-            <button 
-              onClick={() => fileInputRef.current.click()}
-              className="w-full p-3 font-bold rounded-md mb-3 transition-colors bg-blue-600 hover:bg-blue-500 text-white shadow-lg"
-            >
+            <button onClick={() => fileInputRef.current.click()} className="w-full p-3 font-bold rounded-md mb-3 transition-colors bg-blue-600 hover:bg-blue-500 text-white shadow-lg">
               Ingest Document ⇪
             </button>
           )}
 
-          <button 
-            onClick={handleNewChat}
-            disabled={isUploading || isTyping}
-            className="w-full p-3 font-bold rounded-md mb-6 transition-colors bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex justify-center items-center gap-2"
-          >
+          <button onClick={handleNewChat} disabled={isUploading || isTyping} className="w-full p-3 font-bold rounded-md mb-6 transition-colors bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex justify-center items-center gap-2">
             ＋ New Conversation
           </button>
         </div>
@@ -251,10 +272,30 @@ function App() {
                   <li 
                     key={session.id} 
                     onClick={() => loadSession(session.id)}
-                    className={`py-2.5 border-b border-gray-800 flex justify-between items-center group cursor-pointer transition-colors ${currentSessionId === session.id ? 'text-sky-400 font-medium' : 'hover:text-white'}`}
+                    className={`py-2 border-b border-gray-800 flex justify-between items-center group cursor-pointer transition-colors ${currentSessionId === session.id ? 'text-sky-400 font-medium' : 'hover:text-white'}`}
                   >
-                    <span className="truncate max-w-[180px]" title={session.title}>💬 {session.title}</span>
-                    <button onClick={(e) => deleteSession(e, session.id)} className="text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-950/50 px-2 py-1 rounded text-xs font-bold transition-all" title="Delete chat">✕</button>
+                    {/* UPGRADE: Inline Renaming Input */}
+                    {editingSessionId === session.id ? (
+                      <input 
+                        type="text"
+                        autoFocus
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        onBlur={() => saveEditedTitle(session.id)}
+                        onKeyDown={(e) => e.key === 'Enter' && saveEditedTitle(session.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex-1 bg-slate-950 border border-sky-500/50 text-white px-2 py-1 rounded text-xs outline-none mr-2"
+                      />
+                    ) : (
+                      <span className="truncate max-w-[150px]" title={session.title}>💬 {session.title}</span>
+                    )}
+
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {editingSessionId !== session.id && (
+                        <button onClick={(e) => startEditingTitle(e, session)} className="text-gray-400 hover:text-sky-400 px-1.5 py-1 rounded text-xs font-bold transition-all" title="Rename chat">✎</button>
+                      )}
+                      <button onClick={(e) => deleteSession(e, session.id)} className="text-red-500 hover:bg-red-950/50 px-1.5 py-1 rounded text-xs font-bold transition-all" title="Delete chat">✕</button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -268,6 +309,7 @@ function App() {
         </div>
       </div>
 
+      {/* Main Chat Area */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         
         <div className="flex-1 p-10 overflow-y-auto flex flex-col gap-6">
@@ -293,19 +335,10 @@ function App() {
                         const match = /language-(\w+)/.exec(className || '');
                         return !inline && match ? (
                           <div className="my-4 rounded-md overflow-hidden border border-gray-700">
-                            <SyntaxHighlighter
-                              {...props}
-                              children={String(children).replace(/\n$/, '')}
-                              style={vscDarkPlus}
-                              language={match[1]}
-                              PreTag="div"
-                              customStyle={{ margin: 0, padding: '1rem', fontSize: '0.875rem' }}
-                            />
+                            <SyntaxHighlighter {...props} children={String(children).replace(/\n$/, '')} style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ margin: 0, padding: '1rem', fontSize: '0.875rem' }} />
                           </div>
                         ) : (
-                          <code {...props} className="bg-gray-800 text-sky-300 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-700">
-                            {children}
-                          </code>
+                          <code {...props} className="bg-gray-800 text-sky-300 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-700">{children}</code>
                         )
                       }
                     }}
@@ -321,11 +354,7 @@ function App() {
           {chatHistory.length === 1 && !isTyping && uploadedFiles.length > 0 && (
             <div className="max-w-4xl pt-8 flex flex-wrap gap-3">
               {starterChips.map((chipText, i) => (
-                <button 
-                  key={i}
-                  onClick={() => executeSearch(chipText)}
-                  className="px-4 py-2.5 bg-slate-800/50 hover:bg-blue-900/40 border border-slate-700 hover:border-blue-500 text-sm text-slate-300 hover:text-blue-400 rounded-full transition-all text-left"
-                >
+                <button key={i} onClick={() => executeSearch(chipText)} className="px-4 py-2.5 bg-slate-800/50 hover:bg-blue-900/40 border border-slate-700 hover:border-blue-500 text-sm text-slate-300 hover:text-blue-400 rounded-full transition-all text-left">
                   {chipText}
                 </button>
               ))}
@@ -336,15 +365,31 @@ function App() {
              <div className="flex gap-4 max-w-4xl self-start items-center">
                <div className="w-8 h-8 rounded bg-gray-800 flex items-center justify-center font-bold text-xs shrink-0">AI</div>
                <div className="p-4 text-[15px] text-gray-400 italic flex items-center gap-2">
-                 Analyzing semantic vectors
-                 <span className="flex gap-1"><span className="w-1 h-1 bg-gray-500 rounded-full animate-bounce"></span><span className="w-1 h-1 bg-gray-500 rounded-full animate-bounce delay-100"></span><span className="w-1 h-1 bg-gray-500 rounded-full animate-bounce delay-200"></span></span>
+                 Analyzing semantic vectors <span className="flex gap-1"><span className="w-1 h-1 bg-gray-500 rounded-full animate-bounce"></span><span className="w-1 h-1 bg-gray-500 rounded-full animate-bounce delay-100"></span><span className="w-1 h-1 bg-gray-500 rounded-full animate-bounce delay-200"></span></span>
                </div>
              </div>
           )}
         </div>
 
-        <div className="p-6 border-t border-gray-800 bg-slate-900/50">
-          <form onSubmit={handleSearchSubmit} className="flex gap-3 max-w-5xl mx-auto">
+        <div className="p-6 border-t border-gray-800 bg-slate-900/50 flex flex-col gap-3">
+          
+          {/* UPGRADE: Target Document Selector Dropdown */}
+          {uploadedFiles.length > 0 && (
+            <div className="flex items-center gap-3 max-w-5xl mx-auto w-full px-1">
+              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Query Target:</span>
+              <select 
+                value={selectedDocument} 
+                onChange={(e) => setSelectedDocument(e.target.value)}
+                disabled={isTyping || isUploading}
+                className="bg-slate-950 border border-slate-800 text-xs text-sky-400 rounded px-3 py-1.5 outline-none focus:border-sky-500 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                <option value="">All Active Documents</option>
+                {uploadedFiles.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+          )}
+
+          <form onSubmit={handleSearchSubmit} className="flex gap-3 max-w-5xl mx-auto w-full">
             <input 
               type="text" value={query} onChange={(e) => setQuery(e.target.value)}
               placeholder="Query operational dataset vectors..." 
