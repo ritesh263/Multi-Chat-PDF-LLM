@@ -10,9 +10,11 @@ from app.database.connection import get_database
 
 router = APIRouter()
 
+# UPGRADE 1: Add target_document to the allowed schema
 class ChatRequest(BaseModel):
     query: str
     history: list = []
+    target_document: str = "all" 
 
 @router.post("")
 async def chat_with_agent(request: ChatRequest, current_user = Depends(get_current_user)):
@@ -28,11 +30,16 @@ async def chat_with_agent(request: ChatRequest, current_user = Depends(get_curre
         return {"answer": "My vector matrix is currently empty. Please ingest a document before querying."}
 
     try:
-        matched_chunks = retriever.retrieve(request.query, top_k=5)
+        # UPGRADE 2: Pass the target_document down to your retrieval engine
+        matched_chunks = retriever.retrieve(
+            request.query, 
+            top_k=5, 
+            target_document=request.target_document
+        )
         
         if not matched_chunks:
             async def empty_stream():
-                yield "I couldn't find any relevant information in your ingested documents to answer that."
+                yield f"I couldn't find any relevant information in '{request.target_document}' to answer that."
             return StreamingResponse(empty_stream(), media_type="text/plain")
 
         context_block = "\n\n---\n\n".join(

@@ -34,8 +34,9 @@ class LocalVectorRetriever:
             
             self.bm25_engine = BM25Okapi(tokenized_corpus)
 
-    def retrieve(self, search_query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """Executes a Hybrid Fusion scan (Semantic Math + Exact Keywords)."""
+    # UPGRADE: Added target_document parameter
+    def retrieve(self, search_query: str, top_k: int = 5, target_document: str = "all") -> List[Dict[str, Any]]:
+        """Executes a Hybrid Fusion scan (Semantic Math + Exact Keywords) with optional document isolation."""
         if not self.chunks or self.vector_matrix is None or len(self.vector_matrix) == 0:
             return []
 
@@ -60,10 +61,20 @@ class LocalVectorRetriever:
 
             hybrid_scores = (vector_scores * 0.7) + (bm25_scores * 0.3)
             
+            # --- NEW: Target Document Isolation Mask ---
+            if target_document and target_document != "all":
+                for i, chunk in enumerate(self.chunks):
+                    if chunk.get("filename") != target_document:
+                        hybrid_scores[i] = -1.0 # Force irrelevant documents to the bottom
+            
             top_indices = np.argsort(hybrid_scores)[::-1][:top_k]
             
             matched_chunks = []
             for idx in top_indices:
+                # Prevent negative scoring chunks from slipping into the final context block
+                if hybrid_scores[idx] == -1.0:
+                    continue
+                    
                 chunk = self.chunks[idx]
                 matched_chunks.append({
                     "text": chunk["text"],
