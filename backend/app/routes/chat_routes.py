@@ -1,3 +1,5 @@
+from dataclasses import Field
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import google.generativeai as genai
@@ -13,13 +15,13 @@ router = APIRouter()
 # UPGRADE 1: Add target_document to the allowed schema
 class ChatRequest(BaseModel):
     query: str
-    history: list = []
+    # history: list = []
+    history: list = Field(default_factory=list)
     target_document: str = "all" 
 
 @router.post("")
 async def chat_with_agent(request: ChatRequest, current_user = Depends(get_current_user)):
     raw_user_id = current_user["_id"]
-    
     retriever = RAGPipelineManager.get_retriever(raw_user_id)
     
     if not retriever.chunks:
@@ -34,7 +36,7 @@ async def chat_with_agent(request: ChatRequest, current_user = Depends(get_curre
         matched_chunks = retriever.retrieve(
             request.query, 
             top_k=5, 
-            target_document=request.target_document
+            target_document=request.target_document  # will do the searching on the chunks of the selected document only
         )
         
         if not matched_chunks:
@@ -43,14 +45,16 @@ async def chat_with_agent(request: ChatRequest, current_user = Depends(get_curre
             return StreamingResponse(empty_stream(), media_type="text/plain")
 
         context_block = "\n\n---\n\n".join(
+            # doing list comprehension
             [f"Source: {c['metadata']['filename']} (Page {c['metadata']['page_number']})\n{c['text']}" for c in matched_chunks]
         )
 
         history_text = "\n".join(
             [f"{msg.get('role', 'Unknown').capitalize()}: {msg.get('content', '')}" 
              for msg in request.history[-4:] 
-             if "Enterprise Intelligence System initialized" not in msg.get('content', '')]
+             if "Enterprise Intelligence System initialized" not in msg.get('content', '')] # removing the startup msg
         )
+        
         if not history_text:
             history_text = "No previous conversation."
 
