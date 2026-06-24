@@ -92,8 +92,8 @@ async def chat_with_agent(request: ChatRequest, current_user = Depends(get_curre
             try:
                 for chunk in response_stream:
                     if chunk.text:
-                        yield chunk.text
-                        await asyncio.sleep(0.01) 
+                        yield chunk.text  # sending to the frontend
+                        await asyncio.sleep(0.01)  # prevents flooding the client and makes streaming smoother
             except Exception as stream_err:
                 print(f"Streaming Error: {str(stream_err)}")
                 if "429" in str(stream_err) or "quota" in str(stream_err).lower():

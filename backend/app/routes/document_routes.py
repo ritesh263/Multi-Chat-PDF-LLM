@@ -29,23 +29,28 @@ async def upload_documents(
     
     file_bytes = await file.read()
     
-    file_path = os.path.join(settings.UPLOAD_DIR, f"{user_id}_{file.filename}")
-    with open(file_path, "wb") as buffer:
-        buffer.write(file_bytes)
-        
+    file_path = os.path.join(settings.UPLOAD_DIR, 
+                            f"{user_id}_{file.filename}"
+                            )
+    
+    with open(file_path, "wb") as buffer: # w can corrupt files so wb is used as files will be in binary form
+        buffer.write(file_bytes) #after this file physically exists on server
+                
     doc_id = ObjectId()
     
+
+    #extraction of data, chunking etc...
     try:
         pages_data = DocumentProcessor.extract_text_with_metadata(file_bytes, file.filename)
-        chunks = DocumentProcessor.chunk_text(pages_data)
+        chunks = DocumentProcessor.chunk_text(pages_data) #chunking 
         
-        await asyncio.sleep(0.1)
-        if await request.is_disconnected():
-            if os.path.exists(file_path): os.remove(file_path)
+        await asyncio.sleep(0.1)  # allows fastapi's event loop to process other events
+        if await request.is_disconnected():  # returns true if process disrupts
+            if os.path.exists(file_path): os.remove(file_path) #if file exists remove it from disk
             print(f"[CANCELLATION VERIFIED] Ingestion safely aborted during parsing for: {file.filename}")
             return {"message": "Pipeline execution aborted safely."}
             
-        sample_texts = [c["text"] for c in chunks[:4]]
+        sample_texts = [c["text"] for c in chunks[:4]] # extracts only text and list comprehension and taking first 4 chunks
         summary = await ai_service.generate_document_summary(sample_texts)
         
         await asyncio.sleep(0.1)
@@ -102,11 +107,19 @@ async def upload_documents(
         await db["chunks"].delete_many({"document_id": doc_id})
         raise HTTPException(status_code=500, detail=f"Pipeline Processing Internal Failure: {str(e)}")
 
+
+
+
+
 @router.get("/list")
 async def list_documents(current_user: dict = Depends(get_current_user)):
     db = get_database()
     filenames = await db["documents"].distinct("filename", {"user_id": current_user["_id"]})
     return {"documents": filenames}
+
+
+
+
 
 @router.delete("/{filename}")
 async def delete_document(
