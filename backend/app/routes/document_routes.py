@@ -10,7 +10,8 @@ from bson import ObjectId
 import os
 import asyncio
 
-router = APIRouter(prefix="/api/documents", tags=["Documents"])
+# router = APIRouter(prefix="/api/documents", tags=["Documents"])
+router = APIRouter(tags=["Documents"])
 ai_service = AIService()
 
 @router.post("/upload")

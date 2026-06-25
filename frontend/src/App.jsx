@@ -1,23 +1,223 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { uploadDocument, sendChatMessageStream, fetchDocumentsList, deleteDocument } from './api';
 
+// Fallback constant for the API base
+const API_BASE = 'http://localhost:8000';
+
+// --- API FUNCTIONS (Merged into a single file for the preview environment) ---
+
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('rag_token');
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+};
+
+const fetchDocumentsList = async () => {
+  const response = await fetch(`${API_BASE}/api/documents/list`, {
+    method: 'GET',
+    headers: {
+      ...getAuthHeaders()
+    }
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) throw new Error("Unauthorized");
+    throw new Error("Failed to fetch documents");
+  }
+
+  return response.json();
+};
+
+const uploadDocument = async (file, signal) => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE}/api/documents/upload`, {
+    method: 'POST',
+    headers: {
+      ...getAuthHeaders()
+    },
+    body: formData,
+    signal: signal
+  });
+
+  if (!response.ok) throw new Error("Upload failed");
+  return response.json();
+};
+
+const deleteDocument = async (fileName) => {
+  const response = await fetch(`${API_BASE}/api/documents/${fileName}`, {
+    method: 'DELETE',
+    headers: {
+      ...getAuthHeaders()
+    }
+  });
+
+  if (!response.ok) throw new Error("Delete failed");
+  return response.json();
+};
+
+const sendChatMessageStream = async (text, history, targetDoc, onChunk) => {
+  const response = await fetch(`${API_BASE}/api/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders() 
+    },
+    body: JSON.stringify({
+      query: text,
+      history: history,
+      target_document: targetDoc || "all"
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Chat request failed with status ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunkText = decoder.decode(value, { stream: true });
+    onChunk(chunkText);
+  }
+};
+
+
+// --- NEW COMPONENT: Secure Auth Gate ---
+function AuthScreen({ onLoginSuccess }) {
+  const [isLogin, setIsLogin] = useState(true);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    try {
+      if (isLogin) {
+        // Real Login Request to FastAPI
+        const formData = new URLSearchParams();
+        formData.append('username', username);
+        formData.append('password', password);
+
+        const res = await fetch(`${API_BASE}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: formData.toString()
+        });
+
+        if (!res.ok) throw new Error('Invalid credentials');
+        
+        const data = await res.json();
+        localStorage.setItem('rag_token', data.access_token);
+        onLoginSuccess();
+      } else {
+        // Real Registration Request to FastAPI
+        const res = await fetch(`${API_BASE}/api/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.detail || 'Registration failed');
+        }
+        
+        setIsLogin(true);
+        setError('Registration successful! Please sign in.');
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex h-screen bg-slate-950 items-center justify-center font-sans">
+      <div className="w-full max-w-md p-8 bg-gray-900 border border-gray-800 rounded-xl shadow-2xl">
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold text-sky-400 mb-2">Enterprise Intelligence</h2>
+          <p className="text-sm text-gray-400">Secure Access Portal</p>
+        </div>
+
+        {error && (
+          <div className={`p-3 rounded mb-6 text-sm ${error.includes('successful') ? 'bg-emerald-900/50 text-emerald-400 border border-emerald-800' : 'bg-rose-900/50 text-rose-400 border border-rose-800'}`}>
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Username</label>
+            <input 
+              type="text" 
+              value={username} 
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full p-3 bg-slate-950 border border-slate-800 rounded-lg text-white text-sm outline-none focus:border-sky-500 transition-colors"
+              required 
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Password</label>
+            <input 
+              type="password" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full p-3 bg-slate-950 border border-slate-800 rounded-lg text-white text-sm outline-none focus:border-sky-500 transition-colors"
+              required 
+            />
+          </div>
+          
+          <button 
+            type="submit" 
+            disabled={isLoading}
+            className="w-full p-3 mt-4 font-bold rounded-lg transition-colors bg-blue-600 hover:bg-blue-500 text-white shadow-lg disabled:opacity-50 flex justify-center"
+          >
+            {isLoading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : (isLogin ? 'Authenticate ➔' : 'Initialize Account ➔')}
+          </button>
+        </form>
+
+        <div className="mt-6 text-center">
+          <button 
+            type="button" 
+            onClick={() => { setIsLogin(!isLogin); setError(''); }}
+            className="text-xs text-gray-400 hover:text-sky-400 transition-colors"
+          >
+            {isLogin ? "No clearance? Request access (Register)" : "Already have clearance? Authenticate (Login)"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- MAIN APPLICATION COMPONENT ---
 function App() {
   const defaultGreeting = { role: 'assistant', content: 'Enterprise Intelligence System initialized. Ingest a document dataset to begin analysis.' };
   
+  // Auth Management State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  // Chat & Document State
   const [query, setQuery] = useState('');
   const [chatHistory, setChatHistory] = useState([defaultGreeting]);
   const [isUploading, setIsUploading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState([]);
   
+  // Session State
   const [savedSessions, setSavedSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
 
-  // --- NEW STATE: Document Targeting & Renaming ---
   const [selectedDocument, setSelectedDocument] = useState(''); 
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
@@ -25,7 +225,19 @@ function App() {
   const fileInputRef = useRef(null);
   const uploadAbortController = useRef(null);
 
+  // Check auth on load
   useEffect(() => {
+    const token = localStorage.getItem('rag_token');
+    if (token) {
+      setIsAuthenticated(true);
+    }
+    setIsInitializing(false);
+  }, []);
+
+  // Fetch docs only when authenticated
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
     const loadDocs = async () => {
       try {
         const data = await fetchDocumentsList();
@@ -41,7 +253,7 @@ function App() {
     }
     
     loadDocs();
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (currentSessionId && chatHistory.length > 1) {
@@ -50,10 +262,8 @@ function App() {
         let updated = [...prev];
         
         if (existingIndex >= 0) {
-          // UPGRADE: Only update history, preserve the title if they renamed it!
           updated[existingIndex] = { ...updated[existingIndex], history: chatHistory };
         } else {
-          // First time saving: auto-generate title
           const title = chatHistory[1].content.substring(0, 25) + (chatHistory[1].content.length > 25 ? '...' : '');
           updated = [{ id: currentSessionId, title, history: chatHistory }, ...updated];
         }
@@ -63,6 +273,13 @@ function App() {
       });
     }
   }, [chatHistory, currentSessionId]);
+
+  const handleLogout = () => {
+    localStorage.removeItem('rag_token');
+    setIsAuthenticated(false);
+    setChatHistory([defaultGreeting]);
+    setSavedSessions([]);
+  };
 
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
@@ -124,7 +341,7 @@ function App() {
   };
 
   const loadSession = (id) => {
-    if (editingSessionId === id) return; // Prevent loading while editing
+    if (editingSessionId === id) return;
     const session = savedSessions.find(s => s.id === id);
     if (session) {
       setChatHistory(session.history);
@@ -143,7 +360,6 @@ function App() {
     }
   };
 
-  // --- NEW: Renaming Functions ---
   const startEditingTitle = (e, session) => {
     e.stopPropagation();
     setEditingSessionId(session.id);
@@ -183,7 +399,6 @@ function App() {
     setIsTyping(true); 
 
     try {
-      // UPGRADE: Passing selectedDocument to the API
       await sendChatMessageStream(searchText, currentHistory, selectedDocument, (newChunk) => {
         setIsTyping(false); 
         setChatHistory(prev => {
@@ -217,6 +432,16 @@ function App() {
     "Extract any important dates, names, or metrics.",
     "Explain the core concept of the document simply."
   ];
+
+  // --- RENDER LOGIC ---
+  if (isInitializing) {
+    return <div className="h-screen bg-slate-950 flex items-center justify-center text-sky-400 font-sans">Initializing Engine...</div>;
+  }
+
+  // Auth Gate
+  if (!isAuthenticated) {
+    return <AuthScreen onLoginSuccess={() => setIsAuthenticated(true)} />;
+  }
 
   return (
     <div className="flex h-screen bg-slate-950 text-gray-100 font-sans overflow-hidden">
@@ -274,7 +499,6 @@ function App() {
                     onClick={() => loadSession(session.id)}
                     className={`py-2 border-b border-gray-800 flex justify-between items-center group cursor-pointer transition-colors ${currentSessionId === session.id ? 'text-sky-400 font-medium' : 'hover:text-white'}`}
                   >
-                    {/* UPGRADE: Inline Renaming Input */}
                     {editingSessionId === session.id ? (
                       <input 
                         type="text"
@@ -303,12 +527,22 @@ function App() {
           </div>
         </div>
 
-        <div className="shrink-0 pt-4 mt-4 border-t border-gray-800 text-xs text-emerald-500 flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-          Database Node: Connected
+        <div className="shrink-0 pt-4 mt-4 border-t border-gray-800 flex justify-between items-center">
+          <div className="text-xs text-emerald-500 flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+            Node: Connected
+          </div>
+          <button 
+            onClick={handleLogout}
+            className="text-xs font-bold text-gray-500 hover:text-rose-400 transition-colors px-2 py-1"
+            title="Disconnect from server"
+          >
+            Logout ⎋
+          </button>
         </div>
       </div>
 
+      {}
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         
@@ -324,23 +558,12 @@ function App() {
                   msg.content
                 ) : (
                   <ReactMarkdown 
-                    remarkPlugins={[remarkGfm]}
                     components={{
                       p: ({node, ...props}) => <p className="mb-4 last:mb-0" {...props} />,
                       ul: ({node, ...props}) => <ul className="list-disc ml-6 mb-4 space-y-1" {...props} />,
                       ol: ({node, ...props}) => <ol className="list-decimal ml-6 mb-4 space-y-1" {...props} />,
                       li: ({node, ...props}) => <li className="text-slate-300" {...props} />,
-                      strong: ({node, ...props}) => <strong className="font-semibold text-white" {...props} />,
-                      code({node, inline, className, children, ...props}) {
-                        const match = /language-(\w+)/.exec(className || '');
-                        return !inline && match ? (
-                          <div className="my-4 rounded-md overflow-hidden border border-gray-700">
-                            <SyntaxHighlighter {...props} children={String(children).replace(/\n$/, '')} style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ margin: 0, padding: '1rem', fontSize: '0.875rem' }} />
-                          </div>
-                        ) : (
-                          <code {...props} className="bg-gray-800 text-sky-300 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-700">{children}</code>
-                        )
-                      }
+                      strong: ({node, ...props}) => <strong className="font-semibold text-white" {...props} />
                     }}
                   >
                     {msg.content}
@@ -373,7 +596,6 @@ function App() {
 
         <div className="p-6 border-t border-gray-800 bg-slate-900/50 flex flex-col gap-3">
           
-          {/* UPGRADE: Target Document Selector Dropdown */}
           {uploadedFiles.length > 0 && (
             <div className="flex items-center gap-3 max-w-5xl mx-auto w-full px-1">
               <span className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Query Target:</span>

@@ -42,9 +42,12 @@ async def startup_event():
 async def shutdown_event():
     await close_mongo_connection()
 
-app.include_router(auth_routes.router)
-app.include_router(document_routes.router)
+# app.include_router(auth_routes.router)
+# app.include_router(document_routes.router)
 app.include_router(chat_routes.router, prefix="/api/chat", tags=["Chat"])
+
+app.include_router(auth_routes.router, prefix="/api/auth")
+app.include_router(document_routes.router, prefix="/api/documents")
 
 @app.get("/health")
 def health_check():

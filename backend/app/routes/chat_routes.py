@@ -1,7 +1,7 @@
-from dataclasses import Field
+# from dataclasses import Field
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import google.generativeai as genai
 from fastapi.responses import StreamingResponse
 import asyncio
