@@ -1,10 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 
-// Fallback constant for the API base
 const API_BASE = 'http://localhost:8000';
 
-// --- API FUNCTIONS (Merged into a single file for the preview environment) ---
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('rag_token');
